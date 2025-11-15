@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Restaurant Booking Automation Script for INLINE (Karuizawa Hotpot)
-This script automates the reservation process for restaurants using INLINE booking system
-Integration with N8N workflow automation platform
+Restaurant Booking Automation Script for INLINE (島語 台北漢來店)
+This script automates the reservation process for restaurants using INLINE booking system.
+Integration with N8N workflow automation platform.
 """
 
 import sys
@@ -14,7 +14,13 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+# 導入 Service 類別來指定 ChromeDriver 路徑
+from selenium.webdriver.chrome.service import Service as ChromeService 
 from datetime import datetime
+
+# --- 餐廳 URL (島語 台北漢來店) ---
+# 注意：請在正式運行前確認這是正確的訂位連結
+DEFAULT_RESTAURANT_URL = 'https://inline.app/booking/-NoOaD5515x3V8X1F5kK/-NoOaD5515x3V8X1F5kU'
 
 def book_restaurant(booking_data):
     """
@@ -22,14 +28,6 @@ def book_restaurant(booking_data):
     
     Args:
         booking_data: Dictionary containing booking information
-            - restaurant_url: URL to the restaurant booking page
-            - name: Reservation name
-            - title: Mr/Ms/etc
-            - phone: Phone number
-            - email: Email address
-            - date: Booking date (YYYY-MM-DD)
-            - time: Booking time (HH:MM)
-            - party_size: Number of people (optional)
     
     Returns:
         Dictionary with success status and message
@@ -37,176 +35,130 @@ def book_restaurant(booking_data):
     
     driver = None
     try:
-        # Setup Chrome options
+        # --- 數據提取 ---
+        # 使用提供的 booking_data 或預設值 (來自原需求)
+        booking_url = booking_data.get('restaurant_url', DEFAULT_RESTAURANT_URL)
+        name = booking_data.get('name', '李羿')
+        title = booking_data.get('title', '先生')
+        phone = booking_data.get('phone', '0919077013')
+        email = booking_data.get('email', 'alleh363953@hotmail.com')
+        # ⚠️ 注意: 這裡使用 2026-01-07，與原需求 115/1/7 對應
+        booking_date = booking_data.get('date', '2026-01-07') 
+        booking_time = booking_data.get('time', '18:00')
+        party_size = booking_data.get('party_size', '2')
+        
+        # --- 1. 設置 Chrome 選項 (適用於 Linux 容器) ---
         chrome_options = Options()
-        # chrome_options.add_argument('--headless')  # Uncomment for headless mode
-        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--headless')  # 在伺服器上必須使用無頭模式
+        chrome_options.add_argument('--no-sandbox') # 避免 Linux 容器的權限問題
         chrome_options.add_argument('--disable-dev-shm-usage')
         
-        # Initialize WebDriver
-        driver = webdriver.Chrome(options=chrome_options)
+        # --- 2. 關鍵修正：指定 ChromeDriver 服務路徑 ---
+        # 這是為了讓 Selenium 在容器中找到 chromedriver
+        chrome_service = ChromeService(executable_path='/usr/bin/chromedriver') 
         
-        # Navigate to booking page
-        booking_url = booking_data.get('restaurant_url')
+        # 初始化 WebDriver
+        driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
+        
         print(f"Navigating to: {booking_url}")
         driver.get(booking_url)
         
-        # Wait for page to load
         wait = WebDriverWait(driver, 10)
         
-        # Extract booking information
-        name = booking_data.get('name', '李羿')
-        title = booking_data.get('title', '先生')  # Mr
-        phone = booking_data.get('phone', '0919077013')
-        email = booking_data.get('email', 'alleh363953@gmail.com')
-        booking_date = booking_data.get('date', '2025-11-15')
-        booking_time = booking_data.get('time', '22:00')
-        party_size = booking_data.get('party_size', '2')
-        
-        print(f"Booking details: {name} {title}, {phone}, {email}")
-        print(f"Date: {booking_date}, Time: {booking_time}")
-        
-        # Wait for and fill name field
+        # --- 3. 填寫訂位資訊 ---
+
+        # 選擇人數 (假設 select 元素)
         try:
-            name_input = wait.until(EC.presence_of_element_located((By.NAME, 'name')))
-            name_input.clear()
-            name_input.send_keys(name)
-            print(f"✓ Entered name: {name}")
-        except Exception as e:
-            # Try alternative selectors
-            print(f"Trying alternative name selector...")
-            name_inputs = driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='名']")  
-            if name_inputs:
-                name_inputs[0].clear()
-                name_inputs[0].send_keys(name)
-                print(f"✓ Entered name using alternative selector: {name}")
+            adults_select = Select(driver.find_element(By.CSS_SELECTOR, 'select[id*="adults"]'))
+            adults_select.select_by_value(str(party_size))
+        except:
+            print("Warning: Could not select party size.")
         
-        time.sleep(0.5)
+        # 選擇日期 (填寫日期欄位)
+        try:
+            date_input = driver.find_element(By.CSS_SELECTOR, 'input[name*="reserveDate"]')
+            date_input.clear()
+            date_input.send_keys(booking_date)
+            # 有些日期選擇器可能需要點擊外部觸發確認
+            driver.find_element(By.TAG_NAME, 'body').click() 
+        except:
+             print("Warning: Could not fill date.")
+             
+        # 選擇時間
+        try:
+            time_select = Select(driver.find_element(By.CSS_SELECTOR, 'select[id*="reserveTime"]'))
+            time_select.select_by_value(booking_time)
+        except:
+             print("Warning: Could not select time.")
         
-        # Handle title/gender selection if exists
+        time.sleep(1)
+        
+        # 點擊查詢或下一步按鈕
+        try:
+             search_button = driver.find_element(By.CSS_SELECTOR, 'button[id*="searchButton"]')
+             search_button.click()
+             wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'button[id*="searchButton"]')))
+        except:
+             print("Info: No explicit search button found or click not needed.")
+             pass
+             
+        # --- 4. 填寫個人資訊 ---
+        
+        # 嘗試等待到個人資訊頁面加載完成
+        wait.until(EC.presence_of_element_located((By.NAME, 'name')))
+        
+        # 填寫姓名
+        name_input = driver.find_element(By.NAME, 'name')
+        name_input.clear()
+        name_input.send_keys(name)
+        print(f"✓ Entered name: {name}")
+        
+        # 處理稱謂
         try:
             title_select = Select(driver.find_element(By.NAME, 'title'))
-            title_select.select_by_value('mr')
-            print(f"✓ Selected title: {title}")
+            # 假設網站接受中文
+            title_select.select_by_visible_text(title) 
         except:
             print("Title selection not found or not required")
         
-        time.sleep(0.5)
+        # 填寫手機號碼
+        phone_input = driver.find_element(By.NAME, 'phone')
+        phone_input.clear()
+        phone_input.send_keys(phone)
+        print(f"✓ Entered phone: {phone}")
         
-        # Fill phone number
-        try:
-            phone_input = driver.find_element(By.NAME, 'phone')
-            phone_input.clear()
-            phone_input.send_keys(phone)
-            print(f"✓ Entered phone: {phone}")
-        except Exception as e:
-            phone_inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='tel']")
-            if phone_inputs:
-                phone_inputs[0].clear()
-                phone_inputs[0].send_keys(phone)
-                print(f"✓ Entered phone using alternative selector: {phone}")
+        # 填寫 Email
+        email_input = driver.find_element(By.NAME, 'email')
+        email_input.clear()
+        email_input.send_keys(email)
+        print(f"✓ Entered email: {email}")
         
-        time.sleep(0.5)
+        # 勾選同意條款
+        driver.find_element(By.CSS_SELECTOR, 'input[name*="agree"] + label').click()
         
-        # Fill email
-        try:
-            email_input = driver.find_element(By.NAME, 'email')
-            email_input.clear()
-            email_input.send_keys(email)
-            print(f"✓ Entered email: {email}")
-        except Exception as e:
-            email_inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='email']")
-            if email_inputs:
-                email_inputs[0].clear()
-                email_inputs[0].send_keys(email)
-                print(f"✓ Entered email using alternative selector: {email}")
+        # 找尋並點擊最終的「確認訂位」按鈕
+        submit_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[id*="confirmButton"]')))
+        # ⚠️ 注意: 這裡點擊會產生正式訂位，請在確認無誤後才啟用
+        # submit_button.click() 
         
-        time.sleep(1)
-        
-        # Take screenshot before submitting
-        screenshot_path = '/tmp/booking_before_submit.png'
-        driver.save_screenshot(screenshot_path)
-        print(f"✓ Screenshot saved: {screenshot_path}")
-        
-        # Find and click submit button
-        try:
-            # Try to find submit button with various selectors
-            submit_button = None
-            selectors = [
-                "button[type='submit']",
-                "button:contains('訂位')",
-                "button:contains('確認')",
-                "//button[contains(text(), '訂位')]",
-                "//button[contains(text(), '確認')]"
-            ]
-            
-            for selector in selectors:
-                try:
-                    if selector.startswith('//'):
-                        submit_button = driver.find_element(By.XPATH, selector)
-                    else:
-                        submit_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    if submit_button:
-                        break
-                except:
-                    continue
-            
-            if submit_button:
-                print("✓ Found submit button, clicking...")
-                submit_button.click()
-                time.sleep(2)
-                print("✓ Booking submitted successfully!")
-            else:
-                # Find all buttons and try the last one
-                buttons = driver.find_elements(By.TAG_NAME, "button")
-                if buttons:
-                    buttons[-1].click()
-                    print("✓ Clicked potential submit button")
-                    time.sleep(2)
-        except Exception as e:
-            print(f"Error clicking submit button: {e}")
-            raise
-        
-        # Take final screenshot
-        final_screenshot = '/tmp/booking_after_submit.png'
-        driver.save_screenshot(final_screenshot)
-        print(f"✓ Final screenshot saved: {final_screenshot}")
-        
-        # Check for confirmation
-        time.sleep(1)
-        page_source = driver.page_source
-        
-        if '成功' in page_source or 'success' in page_source.lower() or '確認' in page_source:
-            result = {
-                'status': 'success',
-                'message': 'Reservation completed successfully!',
-                'booking_details': {
-                    'name': name,
-                    'title': title,
-                    'phone': phone,
-                    'email': email,
-                    'date': booking_date,
-                    'time': booking_time,
-                    'timestamp': datetime.now().isoformat()
-                }
+        # 檢查確認結果 (這裡返回模擬成功)
+        result = {
+            'status': 'SUCCESS_SIMULATED',
+            'message': 'Reservation process simulated successfully. Final submission button located.',
+            'booking_details': {
+                'name': name,
+                'time': booking_time,
+                'date': booking_date,
+                'timestamp': datetime.now().isoformat()
             }
-        else:
-            result = {
-                'status': 'completed',
-                'message': 'Booking process completed. Please verify the reservation.',
-                'booking_details': {
-                    'name': name,
-                    'phone': phone,
-                    'email': email,
-                    'timestamp': datetime.now().isoformat()
-                }
-            }
+        }
         
         return result
         
     except Exception as e:
         error_message = f"Booking process failed: {str(e)}"
         print(f"✗ {error_message}")
+        
         return {
             'status': 'error',
             'message': error_message,
@@ -214,48 +166,50 @@ def book_restaurant(booking_data):
         }
     
     finally:
-        # Close the browser
+        # 關閉瀏覽器
         if driver:
             driver.quit()
             print("✓ Browser closed")
 
 def main():
     """
-    Main entry point for the script
-    Can be called from N8N or command line
+    Main entry point for the script, handles N8N JSON input/output
     """
     
-    # Default booking data for testing
+    # 預設訂位數據（用於 n8n 或命令行測試）
+    # 這些值將會被 n8n 傳遞的 JSON 數據覆蓋
     booking_data = {
-        'restaurant_url': 'https://inline.co.jp/restaurants/karuizawa-hotpot-gongyi',  # Replace with actual URL
+        'restaurant_url': DEFAULT_RESTAURANT_URL,
         'name': '李羿',
         'title': '先生',
         'phone': '0919077013',
-        'email': 'alleh363953@gmail.com',
-        'date': '2025-11-15',
-        'time': '22:00',
+        'email': 'alleh363953@hotmail.com',
+        'date': '2026-01-07',
+        'time': '18:00',
         'party_size': '2'
     }
     
-    # Try to get booking data from command line arguments (JSON format)
+    # 嘗試從命令行參數 (n8n) 讀取 JSON 數據
     if len(sys.argv) > 1:
         try:
-            booking_data = json.loads(sys.argv[1])
+            # 假設 n8n 將整個 JSON payload 作為第一個參數傳遞
+            cli_data = json.loads(sys.argv[1])
+            booking_data.update(cli_data) # 使用新數據覆蓋預設值
             print("✓ Booking data loaded from command line argument")
         except json.JSONDecodeError:
             print("Warning: Invalid JSON argument, using default booking data")
     
-    # Execute booking
+    # 執行訂位
     result = book_restaurant(booking_data)
     
-    # Output result as JSON
+    # 輸出結果為 JSON (n8n 將會捕捉這個輸出結果)
     print("\n" + "="*50)
-    print("BOOKING RESULT:")
+    print("BOOKING RESULT (JSON):")
     print("="*50)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     
-    # Exit with appropriate code
-    sys.exit(0 if result['status'] != 'error' else 1)
+    # 退出，n8n 將會捕捉這個輸出結果
+    sys.exit(0) 
 
 if __name__ == '__main__':
     main()
