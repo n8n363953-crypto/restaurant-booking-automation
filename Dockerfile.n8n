@@ -1,0 +1,34 @@
+# Dockerfile.n8n
+# 使用官方 n8n 基礎映像
+FROM n8nio/n8n
+
+# 切換到 root 用戶以便安裝系統依賴
+USER root
+
+# 安裝 Python 3, pip, 和 Chromium 瀏覽器（Selenium 運行所需）
+# chromedriver 是 Chromium 的 WebDriver
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    chromium \
+    chromium-driver \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安裝 Python 依賴
+COPY n8n_requirements.txt /home/node/n8n_requirements.txt
+RUN pip3 install -r /home/node/n8n_requirements.txt
+
+# 複製您的 Python 腳本到容器內部的已知路徑
+# 確保 n8n 的 Execute Command 節點能找到它
+COPY book_restaurant.py /home/node/book_restaurant.py
+
+# 設置腳本執行權限
+RUN chmod +x /home/node/book_restaurant.py
+
+# 設置 n8n 運行用戶
+# 雖然官方 n8n 鏡像通常設置了 USER node，這裡再確認一次
+USER node
+
+# 啟動 n8n 服務
+CMD ["n8n"]
